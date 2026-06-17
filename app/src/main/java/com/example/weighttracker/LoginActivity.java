@@ -34,12 +34,18 @@ public class LoginActivity extends AppCompatActivity {
             String username = editUsername.getText().toString().trim();
             String password = editPassword.getText().toString().trim();
 
-            if (username.isEmpty() || password.isEmpty()) {
+            if (ValidationHelper.isBlank(username) || ValidationHelper.isBlank(password)) {
                 showStatus("Please enter a username and password.");
                 return;
             }
 
-            boolean ok = dbHelper.validateUser(username, password);
+            String hashedPassword = SecurityHelper.hashPassword(password);
+            if (hashedPassword == null) {
+                showStatus("Unable to process password securely.");
+                return;
+            }
+
+            boolean ok = dbHelper.validateUser(username, hashedPassword);
             if (ok) {
                 openDashboard(username);
             } else {
@@ -51,12 +57,23 @@ public class LoginActivity extends AppCompatActivity {
             String username = editUsername.getText().toString().trim();
             String password = editPassword.getText().toString().trim();
 
-            if (username.isEmpty() || password.isEmpty()) {
+            if (ValidationHelper.isBlank(username) || ValidationHelper.isBlank(password)) {
                 showStatus("Please enter a username and password.");
                 return;
             }
 
-            boolean created = dbHelper.createUser(username, password);
+            if (!ValidationHelper.isValidPassword(password)) {
+                showStatus("Password must be at least 6 characters long.");
+                return;
+            }
+
+            String hashedPassword = SecurityHelper.hashPassword(password);
+            if (hashedPassword == null) {
+                showStatus("Unable to create account securely.");
+                return;
+            }
+
+            boolean created = dbHelper.createUser(username, hashedPassword);
             if (created) {
                 Toast.makeText(LoginActivity.this, "Account created.", Toast.LENGTH_SHORT).show();
                 openDashboard(username);

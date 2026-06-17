@@ -8,6 +8,8 @@ import android.database.sqlite.SQLiteOpenHelper;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
 
 public class DatabaseHelper extends SQLiteOpenHelper {
 
@@ -69,6 +71,12 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 COL_SETTINGS_GOAL + " REAL" +
                 ")";
         db.execSQL(createSettings);
+
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_weight_username ON " + TABLE_WEIGHT + " (" + COL_WEIGHT_USERNAME + ")");
+
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_weight_date ON " + TABLE_WEIGHT + " (" + COL_WEIGHT_DATE + ")");
+
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_weight_username_date ON " + TABLE_WEIGHT + " (" + COL_WEIGHT_USERNAME + ", " + COL_WEIGHT_DATE + ")");
     }
 
     @Override
@@ -79,6 +87,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         onCreate(db);
     }
 
+    // Creates a new user account using the password value already prepared by the login screen.
     public boolean createUser(String username, String password) {
         SQLiteDatabase db = getWritableDatabase();
         ContentValues values = new ContentValues();
@@ -88,6 +97,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         return result != -1;
     }
 
+    // Validates a user login by checking the provided username and prepared password value.
     public boolean validateUser(String username, String password) {
         SQLiteDatabase db = getReadableDatabase();
         Cursor cursor = db.query(
@@ -105,6 +115,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         return ok;
     }
 
+    // Inserts a new weight record for the current user.
     public long insertWeight(String username, String dateText, double weight) {
         SQLiteDatabase db = getWritableDatabase();
         ContentValues values = new ContentValues();
@@ -114,6 +125,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         return db.insert(TABLE_WEIGHT, null, values);
     }
 
+    // Updates an existing weight record.
     public int updateWeight(long id, String username, String dateText, double weight) {
         SQLiteDatabase db = getWritableDatabase();
         ContentValues values = new ContentValues();
@@ -123,11 +135,30 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         return db.update(TABLE_WEIGHT, values, COL_WEIGHT_ID + "=?", new String[]{String.valueOf(id)});
     }
 
+    // Deletes a weight record by its database id.
     public int deleteWeight(long id) {
         SQLiteDatabase db = getWritableDatabase();
         return db.delete(TABLE_WEIGHT, COL_WEIGHT_ID + "=?", new String[]{String.valueOf(id)});
     }
 
+    public boolean weightEntryExists(String username, String dateText) {
+        SQLiteDatabase db = this.getReadableDatabase();
+
+        Cursor cursor = db.query(
+                TABLE_WEIGHT,
+                new String[]{COL_WEIGHT_ID},
+                COL_WEIGHT_USERNAME + "=? AND " + COL_WEIGHT_DATE + "=?",
+                new String[]{username, dateText},
+                null,
+                null,
+                null
+        );
+
+        boolean exists = cursor.moveToFirst();
+        cursor.close();
+
+        return exists;
+    }
     public List<com.example.weighttracker.WeightEntry> getWeightsForUser(String username) {
         SQLiteDatabase db = getReadableDatabase();
         Cursor c = db.query(
@@ -137,7 +168,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 new String[]{username},
                 null,
                 null,
-                COL_WEIGHT_ID + " DESC"
+                COL_WEIGHT_DATE + " DESC"
         );
 
         List<com.example.weighttracker.WeightEntry> items = new ArrayList<>();
@@ -149,6 +180,31 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         }
         c.close();
         return items;
+    }
+
+    public Map<String, Double> getWeeklyAverages(String username) {
+
+        SQLiteDatabase db = this.getReadableDatabase();
+
+        Cursor cursor = db.rawQuery(
+                "SELECT substr(" + COL_WEIGHT_DATE + ", 1, 7) AS week, AVG(" + COL_WEIGHT_VALUE + ") " +
+                        "FROM " + TABLE_WEIGHT + " WHERE " + COL_WEIGHT_USERNAME + "=? " +
+                        "GROUP BY week ORDER BY week ASC",
+                new String[]{username}
+        );
+
+        Map<String, Double> averages = new LinkedHashMap<>();
+
+        while (cursor.moveToNext()) {
+            String week = cursor.getString(0);
+            double average = cursor.getDouble(1);
+
+            averages.put(week, average);
+        }
+
+        cursor.close();
+
+        return averages;
     }
 
     public void upsertUserSettings(String username, String phoneNumber, Double goalWeight) {

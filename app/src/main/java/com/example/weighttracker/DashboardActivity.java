@@ -27,6 +27,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 public class DashboardActivity extends AppCompatActivity {
 
@@ -78,8 +79,8 @@ public class DashboardActivity extends AppCompatActivity {
 
         textHeader.setText("Daily Weights for " + username);
 
-        btnAddWeight.setOnClickListener(v -> openAddOrEditDialog(null));
-
+        btnAddWeight.setOnClickListener(v -> OrEditDialog(null));
+        openAdd
         btnSmsSettings.setOnClickListener(v -> {
             Intent intent = new Intent(DashboardActivity.this, SmsSettingsActivity.class);
             intent.putExtra("username", username);
@@ -127,7 +128,9 @@ public class DashboardActivity extends AppCompatActivity {
             textGoalSummary.setText("Goal weight: not set   Phone: not set");
         }
 
-        gridWeights.removeAllViews();
+        if (gridWeights.getChildCount() > 0) {
+            gridWeights.removeAllViews();
+        }
         gridWeights.setColumnCount(GRID_COLS);
 
         addHeaderCell("Date");
@@ -135,6 +138,32 @@ public class DashboardActivity extends AppCompatActivity {
         addHeaderCell("Actions");
 
         List<com.example.weighttracker.WeightEntry> items = db.getWeightsForUser(username);
+
+        Map<String, Double> weeklyAverages = db.getWeeklyAverages(username);
+
+        for (Map.Entry<String, Double> entry : weeklyAverages.entrySet()) {
+
+            Log.d(TAG,
+                    "Week: " + entry.getKey() +
+                            " Average Weight: " + entry.getValue());
+        }
+
+        if (items.size() >= 2) {
+
+            double newestWeight = items.get(0).weight;
+            double oldestWeight = items.get(items.size() - 1).weight;
+
+            double difference = newestWeight - oldestWeight;
+
+            if (difference < 0) {
+                Log.d(TAG, "User is trending downward.");
+            } else if (difference > 0) {
+                Log.d(TAG, "User is trending upward.");
+            } else {
+                Log.d(TAG, "Weight trend is stable.");
+            }
+        }
+
         if (items.isEmpty()) {
             addBodyCell("No entries yet", true);
             addBodyCell("", true);
@@ -192,32 +221,44 @@ public class DashboardActivity extends AppCompatActivity {
                     String dateText = editDate.getText().toString().trim();
                     String weightText = editWeight.getText().toString().trim();
 
-                    if (dateText.isEmpty() || weightText.isEmpty()) {
+                    if (ValidationHelper.isBlank(dateText) || ValidationHelper.isBlank(weightText)) {
                         Toast.makeText(this, "Please enter both a date and a weight.", Toast.LENGTH_SHORT).show();
                         return;
                     }
 
-                    double w;
+                    double enteredWeight;
                     try {
-                        w = Double.parseDouble(weightText);
+                        enteredWeight = Double.parseDouble(weightText);
                     } catch (Exception ex) {
                         Toast.makeText(this, "Weight must be a number.", Toast.LENGTH_SHORT).show();
                         return;
                     }
 
-                    if (w <= 0) {
-                        Toast.makeText(this, "Weight must be greater than zero.", Toast.LENGTH_SHORT).show();
+                    if (!ValidationHelper.isValidWeight(enteredWeight)) {
+                        Toast.makeText(this, "Weight must be between 50 and 1000.", Toast.LENGTH_SHORT).show();
                         return;
                     }
 
+                    boolean savedSuccessfully;
+
                     if (isEdit) {
-                        db.updateWeight(existing.id, username, dateText, w);
+                        savedSuccessfully = db.updateWeight(existing.id, username, dateText, enteredWeight) > 0;
                     } else {
-                        db.insertWeight(username, dateText, w);
+                        if (db.weightEntryExists(username, dateText)) {
+                            Toast.makeText(this, "A weight entry already exists for this date.", Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+
+                        savedSuccessfully = db.insertWeight(username, dateText, enteredWeight) != -1;
                     }
 
-                    Log.d(TAG, "Saved weight entry for " + username + ". date=" + dateText + " weight=" + w);
-                    maybeSendGoalReachedSms(w);
+                    if (!savedSuccessfully) {
+                        Toast.makeText(this, "Unable to save weight entry.", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    Log.d(TAG, "Saved weight entry for " + username + ". date=" + dateText + " weight=" + enteredWeight);
+                    maybeSendGoalReachedSms(enteredWeight);
 
                     refreshGrid();
                 })
